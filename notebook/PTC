@@ -60,19 +60,18 @@ import scipy.stats as stats
 from scipy.stats import linregress
 import json
 import bot_frame_op as bot
-
-path = "/home/julie/stage2/data/"
-dossier = 'CCD2'  #nom du dossier 
-doss = os.listdir(path+str(dossier))
+import pandas as pd
 
 
+UnBias='1D'
+#UnBias='2D'
 
-listenum = np.zeros(len(doss))
-for nb in range (len(doss)):
-    num=doss[nb].split('_') #numéro du fichier ouvert
-    listenum[nb]=num[3]
-listenum.sort()
-listenum=np.reshape(listenum,(25,2))
+path = "/home/julie/stage2/notebook/data_flat/"
+dossier = 'flat_13144_flat_ND.csv' #nom du fichier
+
+
+doss = pd.read_csv(path+str(dossier))
+
 
 
 # Image plotting from P.A.
@@ -207,6 +206,82 @@ def fusion_fic (file,filenames):
 
 
 
+def merge_data(doss, refNames) -> pd.DataFrame:
+    """
+    Function to get (flat0,flat1) pairs
+
+    Parameters
+    ----------
+    doss : list(str)
+        List of files on disk.
+    refNames : list(str)
+        list of reference files
+
+    Returns
+    -------
+    df_merge : pandas df
+        Output data (columns='full_path_flat0',
+                             'full_path_flat1', 
+                             'fileName_flat0', 'fileName_flat1')
+
+    """
+
+    ref_flat = pd.DataFrame()
+
+    for name in refNames:
+        dd = pd.read_csv(name, comment='#')
+        ref_flat = pd.concat((ref_flat, dd))
+
+    df_data = pd.DataFrame(doss, columns=['full_path'])
+
+    df_data['fileName'] = df_data['full_path'].str.split('/').str.get(-1)
+
+    df_merge = df_data.merge(ref_flat, left_on=['fileName'], right_on=[
+                             'file_flat0'], suffixes=['', ''])
+
+    df_merge = df_merge.merge(df_data, left_on=['file_flat1'], right_on=[
+                              'fileName'], suffixes=['_flat0', '_flat1'])
+
+    df_merge = df_merge[['full_path_flat0',
+                         'full_path_flat1', 'fileName_flat0', 'fileName_flat1']]
+
+    return df_merge
+
+#df = merge_data(doss, doss)
+
+def process(flat0, flat1):
+    
+    file_list = [flat0, flat1]
+    FileUnBias=bot.InFile(dirall=file_list[:],Slow=False,verbose=False,Bias=UnBias)
+    flat0_overscanned=SingleImageIR(FileUnBias.all_file[0])
+    flat1_overscanned=SingleImageIR(FileUnBias.all_file[1])
+    
+    r = []
+    
+    mean =np.mean((flat0_overscanned+flat1_overscanned)/2)
+    std =np.std(flat0_overscanned-flat1_overscanned)
+    
+    r.append((99,mean,std))
+    for p in range (16):
+            
+        if p <=7:
+            ampli_flat0=flat0_overscanned[0:2002,512*(p):(513)*(p+1)]
+            ampli_flat1=flat1_overscanned[0:2002,512*(p):(513)*(p+1)]
+        else :
+            ampli_flat0=flat0_overscanned[2002:-1,512*(p-8):(513)*(p+1-8)]
+            ampli_flat1=flat1_overscanned[2002:-1,512*(p-8):(513)*(p+1-8)]
+
+        std = np.std(ampli_flat0-ampli_flat1)
+        mean = np.mean((ampli_flat0+ampli_flat1)/2)
+        
+        r.append((p, mean, std))
+    
+    
+    res = pd.DataFrame(r ,columns=['ampli','mean','std'])
+    
+    return res
+
+
 def Read_file (CCD, nb_file)->np.array: 
     """
     
@@ -259,18 +334,18 @@ def Read_file (CCD, nb_file)->np.array:
     return (file)
         
 
+data_test = process('/home/julie/Téléchargements/CCD2-20240307T134109Z-002/CCD2/MC_C_20211207_000389_R22_S11.fits','/home/julie/Téléchargements/CCD2-20240307T134109Z-002/CCD2/MC_C_20211207_000390_R22_S11.fits')
 
-UnBias='1D'
-#UnBias='2D'
+tab=data_test
+print(len(doss))
 
+# tab=[]
+# for i in range (len(doss)):
+#     data=process(doss['file_flat0'][0], doss['file_flat1'][1])
 
-
-tab=[]
-for i in range (len(listenum/2)):
-    data=list(Read_file('CCD2', listenum[i,:])) 
-    tab.append(data)
-tab = np.array(tab)
-tab= tab.reshape(-1, tab.shape[-1])
+#     tab.append(data)
+# tab = np.array(tab)
+# tab= tab.reshape(-1, tab.shape[-1])
 
 
 #enregistre les données des moyennes et std 
@@ -284,6 +359,7 @@ tab= tab.reshape(-1, tab.shape[-1])
 #filenames=['mean_deoverscanned_gain.txt','mean_deoverscanned_gain_1.txt','mean_deoverscanned_gain_2.txt']
 #file='deoverscanned_flat_'+str(UnBias)+'.txt'
 #fusion_fic(file,filenames)  #fichier de sortie de la forme : 'deoverscanned_flat_1D.txt'
+
 
 def plot_ampli (file_name):
     """
@@ -307,15 +383,16 @@ def plot_ampli (file_name):
     tab=file_name
     for ax in axs.flat:
 
-        a_ampli,b_ampli,sat_ampli=fit((tab[:,i+1]**2)/2,tab[:,i+17]) 
-        y,y_params,sat,v=fit_quadra(((tab[:,i+1]**2)/2)-b_ampli,tab[:,i+17],mean_max)
-
-        ax.plot(tab[:,i+17],(((tab[:,i+1]**2)/2)),'.') 
+        a_ampli,b_ampli,sat_ampli=fit((tab['std'][:]**2)/2,tab['mean'][:]) 
+        y,y_params,sat,v=fit_quadra(((tab['std'][:]**2)/2)-b_ampli,tab['mean'][:],mean_max)
+        print(sat)
+        ax.plot(tab['mean'][:],(((tab['std'][:]*2)/2)),'.') 
         ax.plot(l,y(l))
         ax.label_outer()
-
+        
+        print(tab[sat[0],i][0])
         #affiche la légende
-        ax.text(mean_max/2,100, "HDU {:} \nGain = {:.2f}\nTurnoff = {:.4f}  ".format(i+1,1/y_params[1],  tab[sat[0],i+17][0]), fontsize=12)
+        ax.text(mean_max/2,100, "HDU {:} \nGain = {:.2f}\nTurnoff = {:.4f}  ".format(i+1,1/y_params[1],tab[sat[0],i][0]), fontsize=12)
       
         i=i+1
         
@@ -332,6 +409,8 @@ def plot_ampli (file_name):
     
     #plt.savefig('PTC')
     return v
+
+
 
 def plot_CCD (file_name,CCD):
     #tab = np.genfromtxt(file_name, delimiter=' ')
@@ -366,7 +445,7 @@ def plot_CCD (file_name,CCD):
 #file_name = 'tab_CCD2_1D.txt'
 file_name =tab
 mean_max = 60000 #valeur maximale pour faire le fit  #attention à modifier pas définis dans les fonctions
-v=plot_CCD(file_name,16)
+#v=plot_CCD(file_name,16)
 v=plot_ampli(file_name)
 
 
