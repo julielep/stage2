@@ -284,7 +284,7 @@ def fit (tab) -> pd.DataFrame() :
     Returns
     -------
     parameters : pd.dataframe
-        output : 'raft','sensor','ampli','a','b','c','turnoff'
+        output : 'raft','sensor','ampli','a','b','c','gain','turnoff'
                                               
 
     """
@@ -309,10 +309,10 @@ def fit (tab) -> pd.DataFrame() :
                     turnoff = mean[turnoff_idx[0]]
                 
                     c.append((r,s,p,
-                              y_params[0],y_params[1],y_params[2],turnoff))
+                              y_params[0],y_params[1],y_params[2],1/y_params[1],turnoff))
             
     parameters = pd.DataFrame(c ,columns=['raft','sensor','ampli',
-                                          'a','b','c','turnoff'])
+                                          'a','b','c','gain','turnoff'])
                                           
     return parameters
 
@@ -364,10 +364,11 @@ def plot_ampli (data, parameters) -> plt.figure :
                     b = parameters['b'][idx].values[0]
                     c = parameters['c'][idx].values[0]
                     turnoff = parameters['turnoff'][idx].values[0]
+                    gain = parameters['gain'][idx].values[0]
                     axs[irow, icol].plot(mean,var,'.')
                     axs[irow, icol].plot(l,a*l**2+b*l+c)
                     axs[irow,icol].text(xx,yy,legend.
-                                        format(i+1, np.round(1/b,2),
+                                        format(i+1, np.round(gain,2),
                                                np.round(turnoff,4)),
                                         fontsize=12)
           
